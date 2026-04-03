@@ -1,6 +1,6 @@
 [tools]
 node = "24"
-rust = "1.86.0"
+rust = "1.94.1"
 
 [tasks.setup]
 description = "Install frontend npm dependencies and fetch Rust crates"
