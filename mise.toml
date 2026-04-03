@@ -1,0 +1,73 @@
+[tools]
+node = "22.14.0"
+rust = "1.85.0"
+
+[tasks.setup]
+description = "Install frontend npm dependencies and fetch Rust crates"
+depends = ["setup-frontend", "setup-backend"]
+
+[tasks.setup-frontend]
+dir = "frontend"
+run = "npm install"
+
+[tasks.setup-backend]
+dir = "backend"
+run = "rustup component add rustfmt clippy && cargo fetch && cargo install cargo-watch --locked"
+
+[tasks.dev]
+description = "Run backend and frontend dev servers"
+depends = ["dev-backend", "dev-frontend"]
+
+[tasks.dev-backend]
+dir = "backend"
+run = "cargo watch -x run"
+
+[tasks.dev-frontend]
+dir = "frontend"
+run = "npm run dev"
+
+[tasks.build]
+description = "Production-style build for backend and frontend"
+depends = ["build-backend", "build-frontend"]
+
+[tasks.build-backend]
+dir = "backend"
+run = "cargo build --release"
+
+[tasks.build-frontend]
+dir = "frontend"
+run = "npm run build"
+
+[tasks.lint]
+depends = ["lint-backend", "lint-frontend"]
+
+[tasks.lint-backend]
+dir = "backend"
+run = "cargo fmt --check && cargo clippy -- -D warnings"
+
+[tasks.lint-frontend]
+dir = "frontend"
+run = "npm run lint"
+
+[tasks.test]
+depends = ["test-backend", "test-frontend"]
+
+[tasks.test-backend]
+dir = "backend"
+run = "cargo test"
+
+[tasks.test-frontend]
+dir = "frontend"
+run = "npm run test"
+
+[tasks.check]
+description = "Lint, test, and build (same as CI)"
+depends = ["lint", "test", "build"]
+
+[tasks.docker-up]
+description = "Build and start backend + frontend in Docker (detached)"
+run = "docker compose up -d --build"
+
+[tasks.docker-down]
+description = "Stop and remove Docker Compose services"
+run = "docker compose down"
