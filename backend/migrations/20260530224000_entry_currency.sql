@@ -1,0 +1,1 @@
+ALTER TABLE entries ADD COLUMN amount_currency TEXT NOT NULL DEFAULT 'GBP';
