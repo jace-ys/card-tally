@@ -33,7 +33,11 @@ pub fn select_new_entries(
             }
             None => {
                 *legacy_counts
-                    .entry((row.txn_date.clone(), row.merchant_key.clone(), row.amount_cents))
+                    .entry((
+                        row.txn_date.clone(),
+                        row.merchant_key.clone(),
+                        row.amount_cents,
+                    ))
                     .or_insert(0) += 1;
             }
         }
@@ -65,7 +69,10 @@ pub fn select_new_entries(
                 continue;
             }
         }
-        out.push(NewEntry { line, dedup_key: key });
+        out.push(NewEntry {
+            line,
+            dedup_key: key,
+        });
     }
     out
 }

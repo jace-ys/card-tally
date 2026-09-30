@@ -192,12 +192,14 @@ async fn post_import(
 
     let existing: Vec<ExistingSig> = existing_rows
         .into_iter()
-        .map(|(dedup_key, txn_date, merchant_key, amount_cents)| ExistingSig {
-            dedup_key,
-            txn_date,
-            merchant_key,
-            amount_cents,
-        })
+        .map(
+            |(dedup_key, txn_date, merchant_key, amount_cents)| ExistingSig {
+                dedup_key,
+                txn_date,
+                merchant_key,
+                amount_cents,
+            },
+        )
         .collect();
 
     let lines = select_new_entries(fmt.as_str(), parsed_lines, &existing);
@@ -247,7 +249,15 @@ async fn post_import(
     if let Some(last) = lines.last() {
         let d = last.line.txn_date.format("%Y-%m-%d").to_string();
         let k = merchant_key(&last.line.merchant_raw);
-        touch_import_cursor(&state.pool, fmt, &d, &k, last.line.amount_cents, statement_id).await?;
+        touch_import_cursor(
+            &state.pool,
+            fmt,
+            &d,
+            &k,
+            last.line.amount_cents,
+            statement_id,
+        )
+        .await?;
     }
 
     let st: StatementRow = sqlx::query_as(
