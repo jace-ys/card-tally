@@ -155,6 +155,54 @@ async fn import_prunes_entries_already_seen_before() {
 }
 
 #[tokio::test]
+async fn yonder_same_day_same_amount_keeps_distinct_timestamps() {
+    let (addr, _dir, pool) = spawn_app().await;
+    let base = format!("http://{}/api", addr);
+    let client = reqwest::Client::new();
+
+    let csv = br#"Date/Time of transaction,Description,Amount (GBP),Amount (in Charged Currency),Currency,Category,Debit or Credit,Country
+2026-09-13T15:50:34.496836,Hertz,154.65,154.65,GBP,Holiday,Debit,GBR
+2026-09-13T15:37:51.818675,Hertz,154.65,154.65,GBP,Holiday,Debit,GBR
+"#;
+    let part = multipart::Part::bytes(csv.to_vec())
+        .file_name("yonder.csv")
+        .mime_str("text/csv")
+        .unwrap();
+    let form = multipart::Form::new().part("file", part);
+    let first: Value = client
+        .post(format!("{base}/imports"))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(first["importedEntries"], 2);
+
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM entries")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 2);
+
+    let part = multipart::Part::bytes(csv.to_vec())
+        .file_name("yonder.csv")
+        .mime_str("text/csv")
+        .unwrap();
+    let form = multipart::Form::new().part("file", part);
+    let second = client
+        .post(format!("{base}/imports"))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(second.status(), reqwest::StatusCode::BAD_REQUEST);
+    let msg = second.text().await.unwrap_or_default();
+    assert!(msg.contains("no new entries found"));
+}
+
+#[tokio::test]
 async fn rules_crud_quick_assign_and_format_scope() {
     let (addr, _dir, _pool) = spawn_app().await;
     let base = format!("http://{}/api", addr);

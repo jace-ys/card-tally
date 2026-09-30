@@ -9,6 +9,8 @@ use chrono::NaiveDate;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedLine {
     pub txn_date: NaiveDate,
+    /// Full source timestamp when the export has one (Yonder). Amex is calendar date only (`YYYY-MM-DD`).
+    pub source_time: String,
     pub merchant_raw: String,
     pub amount_cents: i64,
     pub amount_currency: String,
@@ -90,6 +92,7 @@ mod tests {
         assert_eq!(lines.len(), 2, "zero-GBP Airbnb row must be skipped");
         let patara = lines.iter().find(|l| l.merchant_raw == "Patara").unwrap();
         assert_eq!(patara.amount_cents, 3814);
+        assert_eq!(patara.source_time, "2026-03-28T15:18:29.089709");
         let booking = lines
             .iter()
             .find(|l| l.merchant_raw.contains("Booking"))
