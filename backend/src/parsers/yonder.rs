@@ -114,6 +114,7 @@ pub fn parse_yonder_csv(data: &[u8]) -> Result<Vec<ParsedLine>, csv::Error> {
         };
         out.push(ParsedLine {
             txn_date,
+            source_time: date.to_string(),
             merchant_raw: desc.to_string(),
             amount_cents,
             amount_currency,

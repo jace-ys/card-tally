@@ -1,4 +1,5 @@
 use crate::db::{rule_payee_id_for_merchant_tx, touch_import_cursor};
+use crate::dedup::{select_new_entries, ExistingSig};
 use crate::error::{AppError, AppResult};
 use crate::models::{
     cents_to_amount_string, entry_to_dto, merchant_key, payee_to_dto, rule_to_dto,
@@ -15,7 +16,6 @@ use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 use sqlx::FromRow;
-use std::collections::HashSet;
 
 fn normalize_payee_color(input: Option<&str>) -> AppResult<Option<String>> {
     let Some(raw) = input else {
@@ -180,8 +180,8 @@ async fn post_import(
         StatementFormat::Yonder => parse_yonder_csv(&data).map_err(AppError::from)?,
     };
 
-    let existing_signatures: Vec<(String, String, i64)> = sqlx::query_as(
-        r#"SELECT e.txn_date, e.merchant_key, e.amount_cents
+    let existing_rows: Vec<(Option<String>, String, String, i64)> = sqlx::query_as(
+        r#"SELECT e.dedup_key, e.txn_date, e.merchant_key, e.amount_cents
            FROM entries e
            INNER JOIN statements s ON s.id = e.statement_id
            WHERE s.format = ?"#,
@@ -190,20 +190,17 @@ async fn post_import(
     .fetch_all(&state.pool)
     .await?;
 
-    let mut seen = HashSet::with_capacity(existing_signatures.len() + parsed_lines.len());
-    for (date, key, amount_cents) in existing_signatures {
-        seen.insert(format!("{date}|{key}|{amount_cents}"));
-    }
+    let existing: Vec<ExistingSig> = existing_rows
+        .into_iter()
+        .map(|(dedup_key, txn_date, merchant_key, amount_cents)| ExistingSig {
+            dedup_key,
+            txn_date,
+            merchant_key,
+            amount_cents,
+        })
+        .collect();
 
-    let mut lines = Vec::with_capacity(parsed_lines.len());
-    for line in parsed_lines {
-        let date = line.txn_date.format("%Y-%m-%d").to_string();
-        let key = merchant_key(&line.merchant_raw);
-        let signature = format!("{date}|{key}|{}", line.amount_cents);
-        if seen.insert(signature) {
-            lines.push(line);
-        }
-    }
+    let lines = select_new_entries(fmt.as_str(), parsed_lines, &existing);
 
     if lines.is_empty() {
         return Err(AppError::BadRequest(
@@ -223,13 +220,14 @@ async fn post_import(
     .await?;
 
     let mut count = 0usize;
-    for line in &lines {
+    for new_entry in &lines {
+        let line = &new_entry.line;
         let key = merchant_key(&line.merchant_raw);
         let payee_id = rule_payee_id_for_merchant_tx(&mut tx, fmt, &key).await?;
         let txn_date = line.txn_date.format("%Y-%m-%d").to_string();
         sqlx::query(
-            r#"INSERT INTO entries (statement_id, txn_date, merchant_raw, merchant_key, amount_cents, amount_currency, payee_id, lifecycle)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'active')"#,
+            r#"INSERT INTO entries (statement_id, txn_date, merchant_raw, merchant_key, amount_cents, amount_currency, payee_id, lifecycle, dedup_key)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)"#,
         )
         .bind(statement_id)
         .bind(&txn_date)
@@ -238,6 +236,7 @@ async fn post_import(
         .bind(line.amount_cents)
         .bind(&line.amount_currency)
         .bind(payee_id)
+        .bind(&new_entry.dedup_key)
         .execute(&mut *tx)
         .await?;
         count += 1;
@@ -246,9 +245,9 @@ async fn post_import(
     tx.commit().await?;
 
     if let Some(last) = lines.last() {
-        let d = last.txn_date.format("%Y-%m-%d").to_string();
-        let k = merchant_key(&last.merchant_raw);
-        touch_import_cursor(&state.pool, fmt, &d, &k, last.amount_cents, statement_id).await?;
+        let d = last.line.txn_date.format("%Y-%m-%d").to_string();
+        let k = merchant_key(&last.line.merchant_raw);
+        touch_import_cursor(&state.pool, fmt, &d, &k, last.line.amount_cents, statement_id).await?;
     }
 
     let st: StatementRow = sqlx::query_as(
